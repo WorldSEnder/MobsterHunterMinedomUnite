@@ -1,0 +1,20 @@
+attribute.name.generic.MHdamage.raw=Raw damage
+attribute.name.generic.MHdamage.element.thunder=Thunder damage
+attribute.name.generic.MHdamage.element.fire=Fire damage
+attribute.name.generic.MHdamage.element.water=Water damage
+attribute.name.generic.MHdamage.element.dragon=Dragon damage
+attribute.name.generic.MHdamage.element.ice=Ice damage
+attribute.name.generic.MHdamage.status.poison=Posion effect
+attribute.name.generic.MHdamage.status.stun=Stun effect
+
+menu.toggleHUD=Toggle your hunter menu
+
+item.testlongsword2.name=Longsword Rarity 2
+item.testlongsword3.name=Longsword Rarity 3
+item.testlongsword4.name=Longsword Rarity 4
+item.testlongsword5.name=Longsword Rarity 5
+item.testlongsword6.name=Longsword Rarity 6
+
+itemGroup.mhmu.armorTab=Mobster Hunter Armory
+itemGroup.mhmu.itemTab=Mobster Hunter Items
+itemGroup.mhmu.weaponTab=Mobster Hunter Weapons
