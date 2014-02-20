@@ -1,2 +1,7 @@
-/bin
 /.git
+/.gradle
+/bin
+/crash-reports
+/logs
+/resourcepacks
+/saves
