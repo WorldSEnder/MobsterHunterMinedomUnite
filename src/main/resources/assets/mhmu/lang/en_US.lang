@@ -7,6 +7,9 @@ attribute.name.generic.MHdamage.element.ice=Ice damage
 attribute.name.generic.MHdamage.status.poison=Posion effect
 attribute.name.generic.MHdamage.status.stun=Stun effect
 
+entity.felyne.name=Felyne
+entity.craftsman.name=Weapon Crafter
+
 menu.toggleHUD=Toggle your hunter menu
 
 item.testlongsword2.name=Longsword Rarity 2

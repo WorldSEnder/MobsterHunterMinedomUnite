@@ -4,7 +4,10 @@ import static java.lang.String.format;
 import static org.lwjgl.opengl.GL11.GL_FLOAT;
 import static org.lwjgl.opengl.GL11.GL_TRIANGLES;
 import static org.lwjgl.opengl.GL11.GL_UNSIGNED_INT;
+import static org.lwjgl.opengl.GL11.GL_VERTEX_ARRAY;
+import static org.lwjgl.opengl.GL11.glDisableClientState;
 import static org.lwjgl.opengl.GL11.glDrawElements;
+import static org.lwjgl.opengl.GL11.glEnableClientState;
 import static org.lwjgl.opengl.GL11.glGetInteger;
 import static org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15.GL_ELEMENT_ARRAY_BUFFER;
@@ -18,6 +21,7 @@ import static org.lwjgl.opengl.GL20.glDisableVertexAttribArray;
 import static org.lwjgl.opengl.GL20.glEnableVertexAttribArray;
 import static org.lwjgl.opengl.GL20.glUseProgram;
 import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
+import static org.lwjgl.opengl.GL31.GL_UNIFORM_BUFFER;
 import static org.lwjgl.opengl.GL41.GL_FRAGMENT_SHADER_BIT;
 import static org.lwjgl.opengl.GL41.GL_GEOMETRY_SHADER_BIT;
 import static org.lwjgl.opengl.GL41.GL_TESS_CONTROL_SHADER_BIT;
@@ -35,6 +39,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.charset.Charset;
@@ -97,37 +103,48 @@ public class MHModelObject implements IModelCustom {
 	public static final short magicNbr = (short) 0xe69d;
 
 	public static final int MAX_BONE_BINDINGS = 4;
+	public static final int HEADER_OVERHEAD = 16;
 
-	protected static int geometryProgram;
+	protected static int geometryProgramArm;
+	protected static int geometryProgramNoArm;
 	protected static int pipeline;
 
 	static {
 		String program = //
 		"layout (location = 0) in vec4 vtx_pos;" //
-				+ "layout (location = 1) in vec2 vtx_uv;" //
 				+ "layout (location = 2) in vec3 vtx_norm;" //
-				+ "out vec2 texcoords;" // is this the name?
-				+ "out vec3 normal;" // is this correct?
+				+ "layout (location = 2) out vec3 normal;" // is this correct?
 				+ "void main (void)" //
 				+ "{" //
-				+ "  gl_Position = vtx_pos_NDC;" //
-				+ "  texcoords   = vtx_tex;" //
+				+ "  gl_Position = vtx_pos;" //
 				+ "  normal      = vtx_norm;" //
 				+ "}"; //
 		pipeline = glGenProgramPipelines();
-		geometryProgram = glCreateShaderProgram(GL_VERTEX_SHADER, program);
+		geometryProgramArm = glCreateShaderProgram(GL_VERTEX_SHADER, program);
+		geometryProgramNoArm = 0; // TODO create shader for no armature
 		glUseProgram(0);
 	}
 
-	protected static final int maxBindings(int boneCount) {
-		return Math.min(0, Math.min(boneCount, MAX_BONE_BINDINGS));
+	protected static final DoubleBuffer dirDoubleBuff(double[] arrayFrom) {
+		return ByteBuffer.allocateDirect(arrayFrom.length * 4)
+				.order(ByteOrder.nativeOrder()).asDoubleBuffer().put(arrayFrom);
+	}
+
+	protected static final FloatBuffer dirFloatBuff(float[] arrayFrom) {
+		return ByteBuffer.allocateDirect(arrayFrom.length * 4)
+				.order(ByteOrder.nativeOrder()).asFloatBuffer().put(arrayFrom);
+	}
+
+	protected static final IntBuffer dirIntBuff(int[] arrayFrom) {
+		return ByteBuffer.allocateDirect(arrayFrom.length * 4)
+				.order(ByteOrder.nativeOrder()).asIntBuffer().put(arrayFrom);
 	}
 
 	/**
 	 * @throws EOFException
 	 *             , IOException
 	 */
-	protected static final int readBinding(DataInputStream dis,
+	protected static final int getBinding(DataInputStream dis,
 			float[] valueArray, int[] indexArray, int boneCount, int offset)
 			throws EOFException, IOException {
 		for (int i = 0; i < MAX_BONE_BINDINGS; ++i) {
@@ -152,16 +169,15 @@ public class MHModelObject implements IModelCustom {
 	 * @throws EOFException
 	 *             , IOException
 	 */
-	protected static final int readBone(DataInputStream is, float[] buffer,
+	protected static final int getBone(DataInputStream is, double[] buffer,
 			int offset) throws EOFException, IOException {
 		int i = 0;
 		// read matrix and inverse matrix
 		for (; i < BONE_L * 2; ++i) {
-			buffer[offset + i] = is.readFloat();
+			buffer[offset + i] = is.readDouble();
 		}
 		return i * 4;
 	}
-
 	/**
 	 * Reads a normal from the input stream
 	 * 
@@ -169,7 +185,7 @@ public class MHModelObject implements IModelCustom {
 	 * @return number of read bytes
 	 * @throws IOException
 	 */
-	protected static final int readNormal(DataInputStream is, float[] buffer,
+	protected static final int getNormal(DataInputStream is, float[] buffer,
 			int offset) throws EOFException, IOException {
 		int i = 0;
 		for (; i < NORM_L; ++i) {
@@ -178,7 +194,21 @@ public class MHModelObject implements IModelCustom {
 		return i * 4;
 	}
 
-	protected static final byte[] readUTF8bytes(DataInputStream dis)
+	/**
+	 * @param is
+	 * @return number of read bytes
+	 * @throws EOFException
+	 *             , IOException
+	 */
+	protected static final void getUniformMat(double[] bones2, int offset)
+			throws EOFException, IOException {
+		// fill with uniform matrix
+		for (int i = 0; i < BONE_L * 2; ++i) {
+			bones2[offset + i] = (((i % 12) % 5) == 0 ? 1 : 0);
+		}
+	}
+
+	protected static final byte[] getUTF8bytes(DataInputStream dis)
 			throws IOException {
 		byte curr;
 		byte[] arr = new byte[0];
@@ -201,8 +231,8 @@ public class MHModelObject implements IModelCustom {
 	 * @return number of read bytes
 	 * @throws IOException
 	 */
-	protected static final int readUVMapping(DataInputStream is,
-			float[] buffer, int offset) throws EOFException, IOException {
+	protected static final int getUVMapping(DataInputStream is, float[] buffer,
+			int offset) throws EOFException, IOException {
 		int i = 0;
 		for (; i < UV_L; ++i) {
 			buffer[offset + i] = is.readFloat();
@@ -216,7 +246,7 @@ public class MHModelObject implements IModelCustom {
 	 * @return number of read bytes
 	 * @throws IOException
 	 */
-	protected static final int readVertex(DataInputStream is, float[] buffer,
+	protected static final int getVertex(DataInputStream is, float[] buffer,
 			int offset) throws EOFException, IOException {
 		int i = 0;
 		for (; i < VTX_XYZ_L; ++i) {
@@ -226,24 +256,97 @@ public class MHModelObject implements IModelCustom {
 		return i;
 	}
 
+	protected static final int maxBindings(int boneCount) {
+		return Math.min(0, Math.min(boneCount, MAX_BONE_BINDINGS));
+	}
+
+	private static final int readBoneCount(DataInputStream dis)
+			throws ModelFormatException, IOException {
+		try {
+			return dis.readByte() & 0xFF;
+		} catch (EOFException e) {
+			throw new ModelFormatException(
+					"Unsuspected end of stream. Could not read bone count.", e);
+		}
+	}
+
+	private static final int readFaceCount(DataInputStream dis)
+			throws ModelFormatException, IOException {
+		try {
+			int faceCount = dis.readInt();
+			if (faceCount < 0)
+				throw new ModelFormatException(
+						"Weird (negative) draw-index count: " + faceCount);
+			return faceCount;
+		} catch (EOFException e) {
+			throw new ModelFormatException(
+					"Unsuspected end of stream. Could not read face count.", e);
+		}
+	}
+	private static final void readHeaderOverhead(DataInputStream dis)
+			throws ModelFormatException, IOException {
+		try {
+			for (int i = 0; i < HEADER_OVERHEAD; ++i) { // 16 buffer bytes
+				dis.readByte();
+			}
+		} catch (EOFException e) {
+			throw new ModelFormatException(
+					"Unsuspected end of stream. Expected at least a full header.",
+					e);
+		}
+	}
+	private static final int readSubGCount(DataInputStream dis)
+			throws ModelFormatException, IOException {
+		try {
+			return dis.readByte() & 0xFF;
+		} catch (EOFException e) {
+			throw new ModelFormatException(
+					"Unsuspected end of stream. Could not read bone count.", e);
+		}
+	}
+
+	private static final int readVersion(DataInputStream dis)
+			throws ModelFormatException, IOException {
+		try {
+			return dis.readInt();
+		} catch (EOFException e) {
+			throw new ModelFormatException(
+					"Unsuspected end of stream. Could not read version of file.",
+					e);
+		}
+	}
+	private static final int readVtxCount(DataInputStream dis)
+			throws ModelFormatException, IOException {
+		try {
+			int vtxCount = dis.readInt();
+			if (vtxCount < 0)
+				throw new ModelFormatException(
+						"Weird (negative) vertex count: " + vtxCount);
+			return vtxCount;
+		} catch (EOFException e) {
+			throw new ModelFormatException(
+					"Unsuspected end of stream. Could not read vertex count.",
+					e);
+		}
+	}
 	private IResourceManager resManager;
 	private ResourceLocation objLoc;
 	/** If the model fails to load. Prevents rendering. */
 	private int status;
-
 	protected int faceCount; // In order to determine the number of elements to
-								// render
+
+	// render
 	/** The one buffer where pos, uv and norms are in */
 	protected int vtxNormUvsBuff; // values are in vertexorder and displaced
 	protected int indicesBuff; // Ready for openGL to process
+
 	protected int bindingValueBuff;
+
 	protected int bindingIndexBuff;
-	protected int boneBuff; // NOT USED
 
-	// TODO make this a buffer
-	protected float[] bones; // Proxy for 3*4 major-row-format-matrix
-
+	protected int boneBuff; // double
 	protected Map<String, SubGroup> nameToSubGroup;
+
 	// TODO protected float[] currentTransform; for animations etc
 	// IDEA create a static get(ResourceLocation method) to prevent reading it
 	// again...
@@ -261,15 +364,19 @@ public class MHModelObject implements IModelCustom {
 		int currProgram = glGetInteger(GL_CURRENT_PROGRAM);
 		if (currProgram != 0) {
 			glUseProgramStages(pipeline, GL_BUT_VERTEX_SHADER, currProgram);
+			glUseProgramStages(pipeline, GL_VERTEX_SHADER, this.boneBuff == 0
+					? geometryProgramNoArm
+					: geometryProgramArm);
 			glUseProgram(0);
 			glBindProgramPipeline(pipeline);
 		} else {
-			glUseProgram(geometryProgram);
+			glUseProgram(geometryProgramArm);
 		}
 		return currProgram;
 	}
 
 	protected void bindStaticBuffers() {
+		glEnableClientState(GL_VERTEX_ARRAY);
 		glBindBuffer(GL_ARRAY_BUFFER, this.vtxNormUvsBuff);
 		// __POS
 		glEnableVertexAttribArray(0); // We like submitting vertices on
@@ -290,27 +397,28 @@ public class MHModelObject implements IModelCustom {
 				VTX_XYZW_L * 4); // offset is 16 bytes
 		// // __NORMS
 		glEnableVertexAttribArray(1); // We like submitting normals on
-										// stream 2
-		glVertexAttribPointer(1, // manipulate stream 2
+										// stream 1
+		glVertexAttribPointer(1, // manipulate stream 1
 				NORM_L, // we have 3 coordinates
 				GL_FLOAT, false, // not normalized
 				VTX_ALLW_L, // length of every element is size of all together
 				(VTX_XYZW_L + UV_L) * 4); // offset is 24
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 		// is this supposed to be done here? or can we bind them once?
-		// int loc = GL20.glGetUniformLocation(geometryProgram, "boneMatrices");
-		// TODO GL41.glProgramUniformMatrix4x3(geometryProgram, loc,
+		// int loc = GL20.glGetUniformLocation(geometryProgramArm,
+		// "boneMatrices");
+		// TODO GL41.glProgramUniformMatrix4x3(geometryProgramArm, loc,
 		// GL11.GL_FALSE, bonesBuff);
-		// int locInv = GL20.glGetUniformLocation(geometryProgram,
+		// int locInv = GL20.glGetUniformLocation(geometryProgramArm,
 		// "boneMatricesInv");
-		// GL41.glProgramUniformMatrix4x3(geometryProgram, locInv,
+		// GL41.glProgramUniformMatrix4x3(geometryProgramArm, locInv,
 		// GL11.GL_FALSE, bonesBuffInv);
 	}
 
 	public int getStatus() {
 		return this.status;
 	}
+
 	@Override
 	public String getType() {
 		return "CustomModelFormat";
@@ -375,284 +483,262 @@ public class MHModelObject implements IModelCustom {
 			throws ModelFormatException, IOException {
 		Logger log = MobsterHunterMinedomUnite.instance().getLogger();
 
-		@SuppressWarnings("unused")
-		int version = 0;
-		int vtxCount = 0;
-		int faceCount = 0;
-		// Has an effective range of [0...255]
-		int boneCount = 0;
-		// Has an effective range of [0...255]
-		int subGCount = 0;
-		// Header
-		// s(short)+s(int)+s(int)+s(int)+s(byte)+s(byte) + 16 freebytes =
-		// 1*2+3*4+2*1+16 = 32 bytes -> update HEADER_L
-		// magicNbr
-		if (dis.readShort() != magicNbr)
-			throw new ModelFormatException(
-					"Not a legal mhModelObjectFile. Incorrect magic number.");
-		// version
+		glEnableClientState(GL_VERTEX_ARRAY);
 		try {
-			version = dis.readInt();
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of stream. Could not read version of file.",
-					e);
-		}
-		// vtxCount
-		try {
-			vtxCount = dis.readInt();
-			if (vtxCount < 0)
+			// Header
+			// s(short)+s(int)+s(int)+s(int)+s(byte)+s(byte) + 16 freebytes =
+			// 1*2+3*4+2*1+16 = 32 bytes -> update HEADER_L
+			// magicNbr
+			if (dis.readShort() != magicNbr)
 				throw new ModelFormatException(
-						"Weird (negative) vertex count: " + vtxCount);
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of stream. Could not read vertex count.",
-					e);
-		}
-		// faceCount
-		try {
-			faceCount = dis.readInt();
-			if (faceCount < 0)
-				throw new ModelFormatException(
-						"Weird (negative) draw-index count: " + faceCount);
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of stream. Could not read face count.", e);
-		}
-		// boneCount
-		try {
-			boneCount = dis.readByte() & 0xFF;
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of stream. Could not read bone count.", e);
-		}
-		// subGCount
-		try {
-			subGCount = dis.readByte() & 0xFF;
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of stream. Could not read bone count.", e);
-		}
-		for (int i = 0; i < 16; ++i) { // 16 buffer bytes
-			dis.readByte();
-		}
+						"Not a legal mhModelObjectFile. Incorrect magic number.");
+			// version
+			@SuppressWarnings("unused")
+			int version = readVersion(dis);
+			// vtxCount
+			int vtxCount = readVtxCount(dis);
+			// faceCount
+			int faceCount = readFaceCount(dis);
+			// boneCount
+			// Has an effective range of [0...255]
+			int boneCount = readBoneCount(dis);
+			// subGCount
+			// Has an effective range of [0...255]
+			int subGCount = readSubGCount(dis);
+			readHeaderOverhead(dis);
 
-		// INITIALIZATION
-		float[] allVtxs = new float[vtxCount * VTX_ALLW_L];
-		int[] indices = new int[faceCount * 3];
+			// INITIALIZATION
+			float[] allVtxs = new float[vtxCount * VTX_ALLW_L];
+			int[] indices = new int[faceCount * 3];
 
-		// Body
-		int bytePointInFile = HEADER_L;
+			// Body
+			int bytePointInFile = HEADER_L;
 
-		// verts VTX_XYZ_L * vtxCount * s(int) =
-		// 3*c*4 = 12*c
-		// position
-		int i = 0;
-		try {
-			for (i = 0; i < vtxCount; ++i) {
-				int readBytes = MHModelObject.readVertex(dis, allVtxs, i
-						* VTX_ALLW_L);
-				bytePointInFile += readBytes;
-			}
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of file around point " + bytePointInFile
-							+ " during reading vertices (nbr." + i + " out of "
-							+ vtxCount + ").", e);
-		}
-		// uvs
-		try {
-			for (i = 0; i < vtxCount; ++i) {
-				int readBytes = MHModelObject.readUVMapping(dis, allVtxs, i
-						* VTX_ALLW_L + VTX_XYZW_L);
-				bytePointInFile += readBytes;
-			}
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of file around point " + bytePointInFile
-							+ " during reading uvMappings (nbr." + i
-							+ " out of " + vtxCount + ").", e);
-		}
-		// normals
-		try {
-			for (i = 0; i < vtxCount; ++i) {
-				int readBytes = MHModelObject.readNormal(dis, allVtxs, i
-						* VTX_ALLW_L + VTX_XYZW_L + UV_L);
-				bytePointInFile += readBytes;
-			}
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of file around point " + bytePointInFile
-							+ " during reading normals (nbr." + i + " out of "
-							+ vtxCount + ").", e);
-		}
-		// buffer that all
-		int vtxNormUvsBuff = glGenBuffers();
-		glBindBuffer(GL_ARRAY_BUFFER, vtxNormUvsBuff);
-		glBufferData(GL_ARRAY_BUFFER, FloatBuffer.wrap(allVtxs), GL_STATIC_DRAW);
-		// index-order
-		int indicesBuff = 0;
-		try {
-			for (i = 0; i < faceCount * 3; ++i) {
-				indices[i] = dis.readInt();
-				if (indices[i] < 0 || indices[i] >= vtxCount)
-					throw new ModelFormatException(
-							"Can't refer to a not existing vertex, at byte "
-									+ bytePointInFile + ").");
-				bytePointInFile += 4;
-			}
-
-			indicesBuff = glGenBuffers();
-			glBindBuffer(GL_ARRAY_BUFFER, indicesBuff);
-			glBufferData(GL_ARRAY_BUFFER, IntBuffer.wrap(indices),
-					GL_STATIC_DRAW);
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of file around point " + bytePointInFile
-							+ " during reading the vtxList for rendering (nbr."
-							+ i + " out of " + faceCount * 3 + ").", e);
-		}
-		log.log(Level.DEBUG, format("The vertex descriptions for modelfile %s"
-				+ "have been read."));
-		// bones
-		int boneAndInvBuff = 0;
-		try {
-			if (boneCount != 0) {
-				float[] bones = new float[256 * BONE_L * 2];
-				for (i = 0; i < boneCount; ++i) {
-					int readBytes = readBone(dis, this.bones, i * BONE_L * 2);
-					int readBytesInv = readBone(dis, this.bones, i * BONE_L * 2
-							+ BONE_L);
-					bytePointInFile += (readBytes + readBytesInv);
-				}
-				for (; i < 256; ++i) {
-					// Fill with uniform matrix
-				}
-			}
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of file around point " + bytePointInFile
-							+ " while reading a bone-matrix", e);
-		}
-		// bindings
-		int bindingValueBuff = 0;
-		int bindingIndexBuff = 0;
-		try {
-			float[] bindingsValues = new float[vtxCount * MAX_BONE_BINDINGS];
-			int[] bindingIndices = new int[vtxCount * MAX_BONE_BINDINGS];
-			for (i = 0; i < vtxCount; ++i) {
-				int readBytes = readBinding(dis, bindingsValues,
-						bindingIndices, boneCount, i * MAX_BONE_BINDINGS);
-				bytePointInFile += readBytes;
-			}
-			bindingValueBuff = glGenBuffers();
-			glBindBuffer(GL_ARRAY_BUFFER, bindingValueBuff);
-			glBufferData(GL_ARRAY_BUFFER, FloatBuffer.wrap(bindingsValues),
-					GL_STATIC_DRAW);
-			bindingIndexBuff = glGenBuffers();
-			glBindBuffer(GL_ARRAY_BUFFER, bindingIndexBuff);
-			glBufferData(GL_ARRAY_BUFFER, IntBuffer.wrap(bindingIndices),
-					GL_STATIC_DRAW);
-		} catch (EOFException e) {
-			throw new ModelFormatException(
-					"Unsuspected end of file around point " + bytePointInFile
-							+ " while reading the bindings for vertex nbr. "
-							+ i + ".", e);
-		}
-
-		log.log(Level.DEBUG, "The bones for the modelfile %s"
-				+ "have been read. bone count: %d", this.objLoc, boneCount);
-		// Animations are present in the description file
-
-		// Subgroups
-		CharsetDecoder cs = Charset.forName("UTF-8").newDecoder()
-				.onMalformedInput(CodingErrorAction.REPORT)
-				.onUnmappableCharacter(CodingErrorAction.REPORT);
-		Map<String, SubGroup> nameToSubGroup = new HashMap<String, SubGroup>();
-		for (i = 0; i < subGCount; ++i) {
-			String name = "";
-			int indicesBuffSubG;
-			int faceCountSubG = 0;
-
-			// name of subgroup
+			// verts VTX_XYZ_L * vtxCount * s(int) =
+			// 3*c*4 = 12*c
+			// position
+			int i = 0;
 			try {
-				byte[] nameBytes = readUTF8bytes(dis);
-				name = cs.decode(ByteBuffer.wrap(nameBytes)).toString();
-				bytePointInFile += nameBytes.length;
-				if (name.isEmpty())
-					throw new ModelFormatException(
-							"The name of a subgroup cannot be empty.");
-				if (nameToSubGroup.containsKey(name))
-					throw new ModelFormatException(
-							String.format(
-									"A subgroup with the name %s already exists.",
-									name));
+				for (i = 0; i < vtxCount; ++i) {
+					int readBytes = MHModelObject.getVertex(dis, allVtxs, i
+							* VTX_ALLW_L);
+					bytePointInFile += readBytes;
+				}
 			} catch (EOFException e) {
 				throw new ModelFormatException(
-						"Unexpected end of file at byte " + bytePointInFile
-								+ " whilst reading the name of a subgroup.", e);
+						"Unsuspected end of file around point "
+								+ bytePointInFile
+								+ " during reading vertices (nbr." + i
+								+ " out of " + vtxCount + ").", e);
 			}
-			// facecount for subGroup
+			// uvs
 			try {
-				faceCountSubG = dis.readInt();
-				bytePointInFile += 4;
-				if (faceCountSubG < 0)
-					throw new ModelFormatException("Face count for subgroup "
-							+ name + " can not be less than zero.");
+				for (i = 0; i < vtxCount; ++i) {
+					int readBytes = MHModelObject.getUVMapping(dis, allVtxs, i
+							* VTX_ALLW_L + VTX_XYZW_L);
+					bytePointInFile += readBytes;
+				}
 			} catch (EOFException e) {
 				throw new ModelFormatException(
-						"Unexpected end of file at byte " + bytePointInFile
-								+ ", reading faceCount for subgroup " + name
-								+ ".", e);
+						"Unsuspected end of file around point "
+								+ bytePointInFile
+								+ " during reading uvMappings (nbr." + i
+								+ " out of " + vtxCount + ").", e);
 			}
-			// read indices
+			// normals
 			try {
-				int[] subGindeces = new int[faceCountSubG * 3];
-				for (int j = 0; j < subGindeces.length; ++j) {
-					int index = dis.readInt();
-					bytePointInFile += 4;
-					if (index >= vtxCount)
+				for (i = 0; i < vtxCount; ++i) {
+					int readBytes = MHModelObject.getNormal(dis, allVtxs, i
+							* VTX_ALLW_L + VTX_XYZW_L + UV_L);
+					bytePointInFile += readBytes;
+				}
+			} catch (EOFException e) {
+				throw new ModelFormatException(
+						"Unsuspected end of file around point "
+								+ bytePointInFile
+								+ " during reading normals (nbr." + i
+								+ " out of " + vtxCount + ").", e);
+			}
+			// buffer that all
+			int vtxNormUvsBuff = glGenBuffers();
+			glBindBuffer(GL_ARRAY_BUFFER, vtxNormUvsBuff);
+			glBufferData(GL_ARRAY_BUFFER, dirFloatBuff(allVtxs), GL_STATIC_DRAW);
+			// index-order
+			int indicesBuff = 0;
+			try {
+				for (i = 0; i < faceCount * 3; ++i) {
+					indices[i] = dis.readInt();
+					if (indices[i] < 0 || indices[i] >= vtxCount)
 						throw new ModelFormatException(
 								"Can't refer to a not existing vertex, at byte "
-										+ bytePointInFile + ", subGroup "
-										+ name + ".");
-					subGindeces[j] = index;
+										+ bytePointInFile + ").");
+					bytePointInFile += 4;
 				}
 
-				indicesBuffSubG = glGenBuffers();
-				glBufferData(GL_ARRAY_BUFFER, IntBuffer.wrap(subGindeces),
+				indicesBuff = glGenBuffers();
+				glBindBuffer(GL_ARRAY_BUFFER, indicesBuff);
+				glBufferData(GL_ARRAY_BUFFER, dirIntBuff(indices),
 						GL_STATIC_DRAW);
-
 			} catch (EOFException e) {
 				throw new ModelFormatException(
-						"Unexpected end of file, could not read next index for a face, at byte "
-								+ bytePointInFile + ", subGroup " + name + ".",
-						e);
+						"Unsuspected end of file around point "
+								+ bytePointInFile
+								+ " during reading the vtxList for rendering (nbr."
+								+ i + " out of " + faceCount * 3 + ").", e);
 			}
-			// Place the subgroup into out map
-			nameToSubGroup.put(name, new SubGroup(indicesBuffSubG,
-					faceCountSubG));
+			log.log(Level.DEBUG,
+					format("The vertex descriptions for modelfile %s"
+							+ "have been read."));
+			// bones
+			int boneAndInvBuff = 0;
+			try {
+				if (boneCount != 0) {
+					double[] bones = new double[256 * BONE_L * 2];
+					for (i = 0; i < boneCount; ++i) {
+						int readBytes = getBone(dis, bones, i * BONE_L * 2);
+						int readBytesInv = getBone(dis, bones, i * BONE_L * 2
+								+ BONE_L);
+						bytePointInFile += (readBytes + readBytesInv);
+					}
+					for (; i < 256; ++i) {
+						getUniformMat(bones, i * BONE_L * 2);
+					}
+					boneAndInvBuff = glGenBuffers();
+					glBindBuffer(GL_UNIFORM_BUFFER, boneAndInvBuff);
+					glBufferData(GL_UNIFORM_BUFFER, dirDoubleBuff(bones),
+							GL_STATIC_DRAW);
+				}
+			} catch (EOFException e) {
+				throw new ModelFormatException(
+						"Unsuspected end of file around point "
+								+ bytePointInFile
+								+ " while reading a bone-matrix", e);
+			}
+			// bindings
+			int bindingValueBuff = 0;
+			int bindingIndexBuff = 0;
+			try {
+				float[] bindingsValues = new float[vtxCount * MAX_BONE_BINDINGS];
+				int[] bindingIndices = new int[vtxCount * MAX_BONE_BINDINGS];
+				for (i = 0; i < vtxCount; ++i) {
+					int readBytes = getBinding(dis, bindingsValues,
+							bindingIndices, boneCount, i * MAX_BONE_BINDINGS);
+					bytePointInFile += readBytes;
+				}
+				bindingValueBuff = glGenBuffers();
+				glBindBuffer(GL_ARRAY_BUFFER, bindingValueBuff);
+				glBufferData(GL_ARRAY_BUFFER, dirFloatBuff(bindingsValues),
+						GL_STATIC_DRAW);
+				bindingIndexBuff = glGenBuffers();
+				glBindBuffer(GL_ARRAY_BUFFER, bindingIndexBuff);
+				glBufferData(GL_ARRAY_BUFFER, dirIntBuff(bindingIndices),
+						GL_STATIC_DRAW);
+			} catch (EOFException e) {
+				throw new ModelFormatException(
+						"Unsuspected end of file around point "
+								+ bytePointInFile
+								+ " while reading the bindings for vertex nbr. "
+								+ i + ".", e);
+			}
 
-			log.log(Level.DEBUG, "A subgroup for the modelfile %s"
-					+ "has been read. Name of subgroup: %s, "
-					+ "facecount for subgroup : %d", name, faceCountSubG);
-		} // end of subgroups
+			log.log(Level.DEBUG, "The bones for the modelfile %s"
+					+ "have been read. bone count: %d", this.objLoc, boneCount);
+			// Animations are present in the description file
 
-		// TODO read subgroup-linkage
+			// Subgroups
+			CharsetDecoder cs = Charset.forName("UTF-8").newDecoder()
+					.onMalformedInput(CodingErrorAction.REPORT)
+					.onUnmappableCharacter(CodingErrorAction.REPORT);
+			Map<String, SubGroup> nameToSubGroup = new HashMap<String, SubGroup>();
+			for (i = 0; i < subGCount; ++i) {
+				String name = "";
+				int indicesBuffSubG;
+				int faceCountSubG = 0;
 
-		this.faceCount = faceCount;
-		this.vtxNormUvsBuff = vtxNormUvsBuff;
-		this.indicesBuff = indicesBuff;
-		this.bindingValueBuff = bindingValueBuff;
-		this.bindingIndexBuff = bindingIndexBuff;
-		// this.boneBuff = boneBuff;
-		this.nameToSubGroup = nameToSubGroup;
+				// name of subgroup
+				try {
+					byte[] nameBytes = getUTF8bytes(dis);
+					name = cs.decode(ByteBuffer.wrap(nameBytes)).toString();
+					bytePointInFile += nameBytes.length;
+					if (name.isEmpty())
+						throw new ModelFormatException(
+								"The name of a subgroup cannot be empty.");
+					if (nameToSubGroup.containsKey(name))
+						throw new ModelFormatException(String.format(
+								"A subgroup with the name %s already exists.",
+								name));
+				} catch (EOFException e) {
+					throw new ModelFormatException(
+							"Unexpected end of file at byte " + bytePointInFile
+									+ " whilst reading the name of a subgroup.",
+							e);
+				}
+				// facecount for subGroup
+				try {
+					faceCountSubG = dis.readInt();
+					bytePointInFile += 4;
+					if (faceCountSubG < 0)
+						throw new ModelFormatException(
+								"Face count for subgroup " + name
+										+ " can not be less than zero.");
+				} catch (EOFException e) {
+					throw new ModelFormatException(
+							"Unexpected end of file at byte " + bytePointInFile
+									+ ", reading faceCount for subgroup "
+									+ name + ".", e);
+				}
+				// read indices
+				try {
+					int[] subGindeces = new int[faceCountSubG * 3];
+					for (int j = 0; j < subGindeces.length; ++j) {
+						int index = dis.readInt();
+						bytePointInFile += 4;
+						if (index >= vtxCount)
+							throw new ModelFormatException(
+									"Can't refer to a not existing vertex, at byte "
+											+ bytePointInFile + ", subGroup "
+											+ name + ".");
+						subGindeces[j] = index;
+					}
 
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
+					indicesBuffSubG = glGenBuffers();
+					glBufferData(GL_ARRAY_BUFFER, dirIntBuff(subGindeces),
+							GL_STATIC_DRAW);
 
-		log.log(Level.INFO, "The file %s has been loaded "
-				+ "correctly and is ready to be used as a model.", this.objLoc);
+				} catch (EOFException e) {
+					throw new ModelFormatException(
+							"Unexpected end of file, could not read next index for a face, at byte "
+									+ bytePointInFile + ", subGroup " + name
+									+ ".", e);
+				}
+				// Place the subgroup into out map
+				nameToSubGroup.put(name, new SubGroup(indicesBuffSubG,
+						faceCountSubG));
+
+				log.log(Level.DEBUG, "A subgroup for the modelfile %s"
+						+ "has been read. Name of subgroup: %s, "
+						+ "facecount for subgroup : %d", name, faceCountSubG);
+			} // end of subgroups
+
+			// TODO read subgroup-linkage
+
+			this.faceCount = faceCount;
+			this.vtxNormUvsBuff = vtxNormUvsBuff;
+			this.indicesBuff = indicesBuff;
+			this.bindingValueBuff = bindingValueBuff;
+			this.bindingIndexBuff = bindingIndexBuff;
+			// this.boneBuff = boneBuff;
+			this.nameToSubGroup = nameToSubGroup;
+
+			log.log(Level.INFO, "The file %s has been loaded "
+					+ "correctly and is ready to be used as a model.",
+					this.objLoc);
+		} finally {
+			glDisableClientState(GL_VERTEX_ARRAY);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		}
 	}
+
 	/**
 	 * 
 	 * @param resManager
@@ -680,6 +766,7 @@ public class MHModelObject implements IModelCustom {
 	public void renderAll() {
 		this.loadFromRes();
 		if (this.shouldRender()) {
+			System.out.println("Render got called!!!");
 			this.bindStaticBuffers();
 			int prevProgram = this.bindPipeline();
 
@@ -770,6 +857,9 @@ public class MHModelObject implements IModelCustom {
 	protected void unbindStaticBuffers() {
 		glDisableVertexAttribArray(0);
 		glDisableVertexAttribArray(1);
-		glDisableVertexAttribArray(2);
+		glDisableVertexAttribArray(8);
+		glDisableClientState(GL_VERTEX_ARRAY);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 }
