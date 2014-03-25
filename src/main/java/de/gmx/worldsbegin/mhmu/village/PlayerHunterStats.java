@@ -13,6 +13,9 @@ import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.world.World;
 import net.minecraftforge.common.IExtendedEntityProperties;
+
+import com.google.common.collect.ImmutableMap;
+
 import de.gmx.worldsbegin.mhmu.entity.EntityMinedom;
 import de.gmx.worldsbegin.mhmu.inventory.InventoryMHItemChest;
 
@@ -40,8 +43,9 @@ public class PlayerHunterStats implements IExtendedEntityProperties {
 														// thing with 5 armor
 														// etc.
 		this.armory.thePlayer = this.thePlayer;
+		// All monsters
 		this.killCountMap = new HashMap<String, Integer>(60);
-		this.killedSizes = new HashMap<String, ArrayList<Float>>(15);
+		this.killedSizes = new HashMap<String, ArrayList<Float>>(60);
 	}
 
 	public void addKillStat(EntityMinedom killedEntity) {
@@ -90,8 +94,8 @@ public class PlayerHunterStats implements IExtendedEntityProperties {
 		return value == null ? 0 : value;
 	}
 
-	public HashMap<String, Integer> getKillCountMap() {
-		return this.killCountMap;
+	public ImmutableMap<String, Integer> getKillCountMap() {
+		return ImmutableMap.copyOf(this.killCountMap);
 	}
 
 	/**

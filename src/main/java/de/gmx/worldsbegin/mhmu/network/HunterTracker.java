@@ -33,7 +33,7 @@ public class HunterTracker {
 
 	// CLIENT has connected, insert our own PlayerController for extended reach
 	@SubscribeEvent
-	public void clientConnected(ClientConnectedToServerEvent cctse) {
+	public void clientConnectedClient(ClientConnectedToServerEvent cctse) {
 		Minecraft mc = Minecraft.getMinecraft();
 		if (mc != null) {
 			PlayerControllerMP controller = mc.playerController;

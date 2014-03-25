@@ -100,7 +100,7 @@ public class ConfigObject {
 								break;
 							case 1 :
 								throw new IllegalStateException(
-										"Should not happen..."); // DEBUG
+										"Should not happen...");
 						}
 						key = keyBuilder.toString().replaceAll("^\\s*", "");
 
