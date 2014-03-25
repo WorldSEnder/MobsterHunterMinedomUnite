@@ -9,7 +9,6 @@ import cpw.mods.fml.relauncher.SideOnly;
 import de.gmx.worldsbegin.mhmu.client.model.ModelMinedom;
 
 @SideOnly(Side.CLIENT)
-// DEPRECATED really rewrite this thing
 public class RenderMinedom extends RenderLiving {
 	ModelMinedom model;
 

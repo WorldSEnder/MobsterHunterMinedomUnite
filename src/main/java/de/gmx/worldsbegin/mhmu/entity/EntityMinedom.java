@@ -12,14 +12,15 @@ import net.minecraft.world.World;
 import net.minecraftforge.common.ForgeHooks;
 import net.minecraftforge.common.MinecraftForge;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import de.gmx.worldsbegin.mhmu.entity.SpawnControl.ExtendedSpawnProperties;
 import de.gmx.worldsbegin.mhmu.entity.ai.EntityAIMonsterHunterCommon;
-import de.gmx.worldsbegin.mhmu.entity.helper.ExtendedSpawnProperties;
 import de.gmx.worldsbegin.mhmu.events.entity.MinedomLivingDeathEvent;
 import de.gmx.worldsbegin.mhmu.events.world.FlashBombEvent;
 import de.gmx.worldsbegin.mhmu.events.world.SonicBombEvent;
 import de.gmx.worldsbegin.mhmu.village.PlayerHunterStats;
 import de.gmx.worldsbegin.mhmu.village.quest.ActiveQuest;
 import de.gmx.worldsbegin.mhmu.village.quest.Quest;
+import de.gmx.worldsbegin.mhmu.village.quest.QuestProvider;
 
 /**
  * Own Entities for Minedom should always extend this. An entityAI is
@@ -54,7 +55,7 @@ public abstract class EntityMinedom extends EntityLiving {
 	public static final int DW_RANK_ENUM = 22;
 	public static final int DW_BROKENPARTS_AS_BYTE = 23;
 
-	public static final int DW_QUEST_AS_STRING = 24;
+	public static final int DW_QUEST_ID = 24;
 	private float prevSize = 1F;
 	/**
 	 * Set this to something different than null and the next time the AI gets
@@ -114,9 +115,7 @@ public abstract class EntityMinedom extends EntityLiving {
 
 	@Override
 	protected void despawnEntity() {
-		String quest = this.dataWatcher
-				.getWatchableObjectString(DW_QUEST_AS_STRING);
-		if (quest == null || quest.isEmpty()) {
+		if (this.getDataWatcher().getWatchableObjectInt(DW_QUEST_ID) < 0) {
 			super.despawnEntity();
 		}
 	}
@@ -144,9 +143,9 @@ public abstract class EntityMinedom extends EntityLiving {
 		this.dataWatcher.addObject(DW_BROKENPARTS_AS_BYTE,
 				Byte.valueOf(exprops.brokenParts));
 		// currentQuest
-		this.dataWatcher.addObject(DW_QUEST_AS_STRING, exprops.quest == null
-				? ""
-				: exprops.quest.toString());
+		this.dataWatcher.addObject(DW_QUEST_ID, exprops.quest == null
+				? -1
+				: exprops.quest.activeID);
 	}
 
 	@Override
@@ -188,8 +187,8 @@ public abstract class EntityMinedom extends EntityLiving {
 	 * when this monster dies.
 	 */
 	public ActiveQuest getTargetQuest() {
-		return Quest.questFromUUIDAndId(this.dataWatcher
-				.getWatchableObjectString(24));
+		return QuestProvider.getActiveQuestById(this.getDataWatcher()
+				.getWatchableObjectInt(DW_QUEST_ID));
 	}
 
 	@Override
@@ -242,15 +241,13 @@ public abstract class EntityMinedom extends EntityLiving {
 		ActiveQuest quest = this.getTargetQuest();
 		if (quest != null) {
 			quest.onDeathOf(this);
-			EntityPlayer[] party = quest.getPartyMembers();
+			EntityPlayer[] party = quest.party.getPartyMembers();
 			for (int i = 0; i < party.length; i++) {
 				EntityPlayer player = party[i];
 				if (player != null) {
 					String ident = PlayerHunterStats.identifier;
 					((PlayerHunterStats) player.getExtendedProperties(ident))
 							.addKillStat(this);
-					// MHStatsHolder.getInstance().getStatFileForPlayer(player).addKillStat(this);
-
 				}
 			}
 		} else {
@@ -258,8 +255,6 @@ public abstract class EntityMinedom extends EntityLiving {
 				String ident = PlayerHunterStats.identifier;
 				((PlayerHunterStats) killer.getExtendedProperties(ident))
 						.addKillStat(this);
-				// MHStatsHolder.getInstance().getStatFileForPlayer((EntityPlayer)
-				// killer).addKillStat(this);
 			}
 		}
 		MinecraftForge.EVENT_BUS.post(new MinedomLivingDeathEvent(this,
@@ -337,8 +332,8 @@ public abstract class EntityMinedom extends EntityLiving {
 				par1nbtTagCompound.getInteger("rank"));
 		this.dataWatcher.updateObject(DW_BROKENPARTS_AS_BYTE,
 				par1nbtTagCompound.getByte("brokenParts"));
-		this.dataWatcher.updateObject(DW_QUEST_AS_STRING,
-				par1nbtTagCompound.getString("questAsString"));
+		this.dataWatcher.updateObject(DW_QUEST_ID,
+				par1nbtTagCompound.getInteger("questId"));
 	}
 
 	@Override
@@ -387,13 +382,10 @@ public abstract class EntityMinedom extends EntityLiving {
 	 * 
 	 * @param targetQuest
 	 */
-	public void setTargetQuest(Quest targetQuest) {
-		if (targetQuest != null) {
-			this.dataWatcher.updateObject(DW_QUEST_AS_STRING,
-					targetQuest.toString());
-		} else {
-			this.dataWatcher.updateObject(DW_QUEST_AS_STRING, "");
-		}
+	public void setTargetQuest(ActiveQuest quest) {
+		this.dataWatcher.updateObject(DW_QUEST_ID, quest == null
+				? -1
+				: quest.activeID);
 	}
 
 	/**
@@ -426,7 +418,7 @@ public abstract class EntityMinedom extends EntityLiving {
 		par1nbtTagCompound
 				.setByte("brokenParts", this.dataWatcher
 						.getWatchableObjectByte(DW_BROKENPARTS_AS_BYTE));
-		par1nbtTagCompound.setString("questAsString",
-				this.dataWatcher.getWatchableObjectString(DW_QUEST_AS_STRING));
+		par1nbtTagCompound.setInteger("questId",
+				this.dataWatcher.getWatchableObjectInt(DW_QUEST_ID));
 	}
 }

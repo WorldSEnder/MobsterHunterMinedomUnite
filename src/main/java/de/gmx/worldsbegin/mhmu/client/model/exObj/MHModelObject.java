@@ -482,7 +482,6 @@ public class MHModelObject implements IModelCustom {
 	protected final void loadModel(DataInputStream dis)
 			throws ModelFormatException, IOException {
 		Logger log = MobsterHunterMinedomUnite.instance().getLogger();
-
 		glEnableClientState(GL_VERTEX_ARRAY);
 		try {
 			// Header
