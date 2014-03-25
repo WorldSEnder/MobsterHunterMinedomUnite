@@ -48,11 +48,24 @@ public abstract class FluidContainerRegistry
         public int hashCode()
         {
             int code = 1;
-            code = 31*code + container.hashCode();
+            code = 31*code + container.getItem().hashCode();
             code = 31*code + container.getItemDamage();
             if (fluid != null)
                 code = 31*code + fluid.fluidID;
             return code;
+        }
+        @Override
+        public boolean equals(Object o)
+        {
+            if (!(o instanceof ContainerKey)) return false;
+            ContainerKey ck = (ContainerKey)o;
+            if (container.getItem() != ck.container.getItem()) return false;
+            if (container.getItemDamage() != ck.container.getItemDamage()) return false;
+            if (fluid == null && ck.fluid != null) return false;
+            if (fluid != null && ck.fluid == null) return false;
+            if (fluid == null && ck.fluid == null) return true;
+            if (fluid.fluidID != ck.fluid.fluidID) return false;
+            return true;
         }
     }
 
@@ -223,8 +236,8 @@ public abstract class FluidContainerRegistry
             return false;
         }
 
-        FluidContainerData data = filledContainerMap.get(new ContainerKey(container, fluid));
-        return data == null ? false : data.fluid.isFluidEqual(fluid);
+        FluidContainerData data = containerFluidMap.get(new ContainerKey(container));
+        return data == null ? false : data.fluid.containsFluid(fluid);
     }
 
     public static boolean isBucket(ItemStack container)

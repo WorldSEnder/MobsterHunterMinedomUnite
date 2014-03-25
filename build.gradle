@@ -22,7 +22,7 @@ group= "de.gmx.worldsbegin" // http://maven.apache.org/guides/mini/guide-naming-
 archivesBaseName = "modid"
 
 minecraft {
-    version = "1.7.2-10.12.0.1024"
+    version = "1.7.2-10.12.0.1047"
 }
 processResources
 {

@@ -21,7 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityClientPlayerMP;
@@ -69,6 +71,7 @@ import cpw.mods.fml.client.registry.RenderingRegistry;
 import cpw.mods.fml.common.DummyModContainer;
 import cpw.mods.fml.common.DuplicateModsFoundException;
 import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.FMLContainer;
 import cpw.mods.fml.common.FMLLog;
 import cpw.mods.fml.common.IFMLSidedHandler;
 import cpw.mods.fml.common.Loader;
@@ -78,10 +81,14 @@ import cpw.mods.fml.common.MissingModsException;
 import cpw.mods.fml.common.ModContainer;
 import cpw.mods.fml.common.ModMetadata;
 import cpw.mods.fml.common.ObfuscationReflectionHelper;
+import cpw.mods.fml.common.WorldAccessContainer;
 import cpw.mods.fml.common.WrongMinecraftVersionException;
+import cpw.mods.fml.common.event.FMLMissingMappingsEvent;
+import cpw.mods.fml.common.event.FMLMissingMappingsEvent.Action;
 import cpw.mods.fml.common.eventhandler.EventBus;
 import cpw.mods.fml.common.network.FMLNetworkEvent;
 import cpw.mods.fml.common.registry.GameData;
+import cpw.mods.fml.common.registry.GameRegistryException;
 import cpw.mods.fml.common.registry.LanguageRegistry;
 import cpw.mods.fml.common.toposort.ModSortingException;
 import cpw.mods.fml.relauncher.Side;
@@ -272,7 +279,7 @@ public class FMLClientHandler implements IFMLSidedHandler
         }
 
         // Reload resources
-//        client.func_110436_a();
+        client.func_110436_a();
         RenderingRegistry.instance().loadEntityRenderers((Map<Class<? extends Entity>, Render>)RenderManager.field_78727_a.field_78729_o);
         guiFactories = HashBiMap.create();
         for (ModContainer mc : Loader.instance().getActiveModList())
@@ -295,6 +302,7 @@ public class FMLClientHandler implements IFMLSidedHandler
             }
         }
         loading = false;
+        client.field_71474_y.func_74300_a(); //Reload options to load any mod added keybindings.
     }
 
     @SuppressWarnings("unused")
@@ -588,13 +596,40 @@ public class FMLClientHandler implements IFMLSidedHandler
         }
         else
         {
+
             launchIntegratedServerCallback(dirName, saveName);
         }
     }
 
+    private CountDownLatch gameReleaseLatch;
+    private Thread clientWaiter;
+    private GameRegistryException gre;
+
     public void launchIntegratedServerCallback(String dirName, String saveName)
     {
-        client.func_71371_a(dirName, saveName, (WorldSettings)null);
+        try
+        {
+            try
+            {
+                Thread.interrupted();
+                gameReleaseLatch = new CountDownLatch(1);
+                clientWaiter = Thread.currentThread();
+                client.func_71371_a(dirName, saveName, (WorldSettings)null);
+                System.out.printf("POKEE %b\n", Thread.currentThread().isInterrupted());
+                gameReleaseLatch.await();
+            }
+            catch (InterruptedException ie)
+            {
+                Thread.interrupted();
+                throw gre;
+            }
+        }
+        catch (GameRegistryException gre)
+        {
+            client.func_71403_a(null);
+            showGuiScreen(new GuiModItemsMissing(gre.getItems(), gre.getMessage()));
+        }
+        Thread.interrupted();
     }
 
     public void showInGameModOptions(GuiIngameMenu guiIngameMenu)
@@ -742,6 +777,7 @@ public class FMLClientHandler implements IFMLSidedHandler
     }
 
     private CountDownLatch playClientBlock;
+
     public void setPlayClient(NetHandlerPlayClient netHandlerPlayClient)
     {
         playClientBlock.countDown();
@@ -775,5 +811,75 @@ public class FMLClientHandler implements IFMLSidedHandler
         {
             bus.post(new FMLNetworkEvent.CustomPacketRegistrationEvent<NetHandlerPlayServer>(manager, channelSet, channel, side, NetHandlerPlayServer.class));
         }
+    }
+
+    public void setDefaultMissingAction(FMLMissingMappingsEvent.Action action)
+    {
+        this.defaultMissingAction = action;
+    }
+
+    private Action defaultMissingAction = FMLMissingMappingsEvent.Action.FAIL;
+
+    @Override
+    public Action getDefaultMissingAction()
+    {
+        return defaultMissingAction;
+    }
+
+    @Override
+    public void serverLoadedSuccessfully()
+    {
+        if (gameReleaseLatch!=null)
+        {
+            gameReleaseLatch.countDown();
+        }
+    }
+
+    @Override
+    public void failedServerLoading(RuntimeException ex, WorldAccessContainer wac)
+    {
+        if (wac instanceof FMLContainer && ex instanceof GameRegistryException)
+        {
+            try
+            {
+                gre = (GameRegistryException) ex;
+                Executors.newSingleThreadExecutor().submit(new Callable<Void>()
+                {
+                    // This needs to happen in a separate thread so that the server can "crash"
+                    // The three pokes are for the client - it's in a sleep loop, and needs to get
+                    // out of it
+                    @Override
+                    public Void call() throws Exception
+                    {
+                        System.err.println("POKE");
+                        clientWaiter.interrupt();
+                        Thread.sleep(50);
+                        System.err.println("POKE");
+                        clientWaiter.interrupt();
+                        Thread.sleep(50);
+                        System.err.println("POKE");
+                        clientWaiter.interrupt();
+                        return null;
+                    }
+
+                });
+
+            }
+            catch (Throwable t)
+            {
+                FMLLog.log(Level.ERROR, t, "stuff");
+            }
+        }
+    }
+
+    public boolean handlingCrash(CrashReport report)
+    {
+        return report.func_71505_b() instanceof GameRegistryException;
+    }
+
+    @Override
+    public boolean shouldAllowPlayerLogins()
+    {
+        return true; //Always true as the server has to be started before clicking 'Open to lan'
     }
 }

@@ -1,7 +1,8 @@
-/.git
 /.gradle
+/.git
 /bin
 /crash-reports
 /logs
 /resourcepacks
 /saves
+.gitignore

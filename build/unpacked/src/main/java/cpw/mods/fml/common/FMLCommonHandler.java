@@ -39,6 +39,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.MapMaker;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import cpw.mods.fml.common.event.FMLMissingMappingsEvent;
 import cpw.mods.fml.common.eventhandler.EventBus;
 import cpw.mods.fml.common.gameevent.InputEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
@@ -265,6 +266,7 @@ public class FMLCommonHandler
 
     public boolean handleServerStarting(MinecraftServer server)
     {
+        sidedDelegate.serverLoadedSuccessfully();
         return Loader.instance().serverStarting(server);
     }
 
@@ -379,7 +381,15 @@ public class FMLCommonHandler
                 WorldAccessContainer wac = ((InjectedModContainer)mc).getWrappedWorldAccessContainer();
                 if (wac != null)
                 {
-                    wac.readData(handler, worldInfo, additionalProperties, tagCompound.func_74775_l(mc.getModId()));
+                    try
+                    {
+                        wac.readData(handler, worldInfo, additionalProperties, tagCompound.func_74775_l(mc.getModId()));
+                    }
+                    catch (RuntimeException ex)
+                    {
+                        sidedDelegate.failedServerLoading(ex, wac);
+                        throw ex;
+                    }
                 }
             }
         }
@@ -502,5 +512,15 @@ public class FMLCommonHandler
     public void fireNetRegistrationEvent(NetworkManager manager, Set<String> channelSet, String channel, Side side)
     {
         sidedDelegate.fireNetRegistrationEvent(bus(), manager, channelSet, channel, side);
+    }
+
+    public FMLMissingMappingsEvent.Action getDefaultMissingAction()
+    {
+        return sidedDelegate.getDefaultMissingAction();
+    }
+
+    public boolean shouldAllowPlayerLogins()
+    {
+        return sidedDelegate.shouldAllowPlayerLogins();
     }
 }
