@@ -5,7 +5,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 import de.gmx.worldsbegin.mhmu.entity.EntityMHVillager;
-import de.gmx.worldsbegin.mhmu.inventory.MHItemChestContainer;
+import de.gmx.worldsbegin.mhmu.inventory.containers.MHItemChestContainer;
 
 @SideOnly(Side.CLIENT)
 public class MHItemChestGUI extends GuiContainer {

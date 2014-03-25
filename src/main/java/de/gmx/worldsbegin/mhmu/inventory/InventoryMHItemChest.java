@@ -5,9 +5,6 @@ import net.minecraft.inventory.InventoryBasic;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
-import de.gmx.worldsbegin.mhmu.items.MHItem;
-import de.gmx.worldsbegin.mhmu.items.armor.MHArmor;
-import de.gmx.worldsbegin.mhmu.items.weapons.MHWeapon;
 
 public class InventoryMHItemChest extends InventoryBasic {
 	public static InventoryMHItemChest getInvFromNBTTagCompound(
@@ -38,10 +35,14 @@ public class InventoryMHItemChest extends InventoryBasic {
 	@Override
 	// Is not been called at all... normally.
 	public boolean isItemValidForSlot(int i, ItemStack itemstack) {
-		return itemstack == null || itemstack.getItem() instanceof MHItem
-				&& !this.holdsWeapons
-				|| itemstack.getItem() instanceof MHWeapon
-				|| itemstack.getItem() instanceof MHArmor && this.holdsWeapons;
+		// return itemstack == null || itemstack.getItem() instanceof MHItem
+		// && !this.holdsWeapons
+		// || itemstack.getItem() instanceof MHWeapon
+		// || itemstack.getItem() instanceof MHArmor && this.holdsWeapons;
+
+		return false; // No Block after all... so there is no hopper that can
+						// push any items into the inventory. For any other
+						// possible operation we return false
 	}
 
 	@Override

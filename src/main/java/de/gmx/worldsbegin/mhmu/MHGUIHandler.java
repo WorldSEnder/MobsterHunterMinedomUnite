@@ -5,7 +5,7 @@ import net.minecraft.world.World;
 import cpw.mods.fml.common.network.IGuiHandler;
 import de.gmx.worldsbegin.mhmu.client.gui.MHItemChestGUI;
 import de.gmx.worldsbegin.mhmu.entity.EntityMHVillager;
-import de.gmx.worldsbegin.mhmu.inventory.MHItemChestContainer;
+import de.gmx.worldsbegin.mhmu.inventory.containers.MHItemChestContainer;
 ;
 
 /**
