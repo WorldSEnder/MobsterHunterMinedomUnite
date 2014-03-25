@@ -1,0 +1,8 @@
+/.gradle
+/.git
+/bin
+/build/tmp
+/crash-reports
+/logs
+/resourcepacks
+/saves
