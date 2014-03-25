@@ -11,9 +11,21 @@ import net.minecraft.item.ItemStack;
  * 
  * @version 0.0.1a_26.07.2013
  */
-public interface ILootingEvent {
-	public ItemStack[] getLootedItems();
-	public EntityPlayer getLootingPlayer();
+public abstract class ILootingEvent<T> extends MHEvent {
+	public static ILootingEvent<?> getLootingEventFor(Object object) {
+		if (object == null)
+			return null;
+		return null;
+	}
 
-	public LootingSource getLootingSource();
+	public final LootingTarget<T> target;
+
+	public final EntityPlayer lootingPlayer;
+
+	public ILootingEvent(EntityPlayer lootingPlayer, LootingTarget<T> target) {
+		this.target = target;
+		this.lootingPlayer = lootingPlayer;
+	}
+
+	public abstract ItemStack[] getLootedItems();
 }
