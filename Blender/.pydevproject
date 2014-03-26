@@ -3,11 +3,13 @@
 
 <pydev_property name="org.python.pydev.PYTHON_PROJECT_VERSION">python 3.0</pydev_property>
 <pydev_property name="org.python.pydev.PYTHON_PROJECT_INTERPRETER">Python33</pydev_property>
-<pydev_pathproperty name="org.python.pydev.PROJECT_EXTERNAL_SOURCE_PATH">
-<path>C:\Users\Public\Blender\blender-2.69-windows64\blender-2.69-windows64\2.69\scripts\addons</path>
-<path>C:\Users\Public\Blender\blender-2.69-windows64\blender-2.69-windows64\2.69\scripts\modules</path>
-</pydev_pathproperty>
+
+
+<pydev_variables_property name="org.python.pydev.PROJECT_VARIABLE_SUBSTITUTION">
+<key>BLENDPATH</key>
+<value>\C:\Users\Public\Blender\blender-2.69-windows64\blender-2.69-windows64\2.69</value>
+</pydev_variables_property>
 <pydev_pathproperty name="org.python.pydev.PROJECT_SOURCE_PATH">
-<path>/${PROJECT_DIR_NAME}/io_mesh_mhmdl</path>
+<path>/${PROJECT_DIR_NAME}/io_mesh_mhmdl2.69</path>
 </pydev_pathproperty>
 </pydev_project>
